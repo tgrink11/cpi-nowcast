@@ -17,15 +17,20 @@ export function runNowcast(
   data: RawDataBundle,
   targetMonth: string
 ): NowcastOutput {
-  // Step 1: Base Effects
+  // Step 1: Base Effects (anchored to latest CPI report month)
   const baseEffects = analyzeBaseEffects(data.cpi, targetMonth);
 
   // Step 2: Commodity Signals
+  // Use the current calendar month for commodity signals when it's ahead
+  // of the latest CPI report, since commodity prices are available in
+  // real-time even when CPI hasn't been reported yet.
+  const today = new Date().toISOString().slice(0, 10);
+  const commodityMonth = today > targetMonth ? today : targetMonth;
   const commodityInputs = analyzeCommoditySignals(
     data.brent,
     data.ppiaco,
     data.faoFood,
-    targetMonth
+    commodityMonth
   );
 
   // Step 3: Rate of Change Signal

@@ -5,6 +5,7 @@ import { BaseEffectsCard } from './components/BaseEffectsCard';
 import { CommodityTable } from './components/CommodityTable';
 import { PhaseQuadrant } from './components/PhaseQuadrant';
 import { AssetImplications } from './components/AssetImplications';
+import { AnalystNotes } from './components/AnalystNotes';
 import { LoadingState } from './components/LoadingState';
 import { useCpiNowcast } from './hooks/useCpiNowcast';
 
@@ -72,6 +73,9 @@ export default function App() {
               <PhaseQuadrant phase={nowcast.phase} />
               <AssetImplications phase={nowcast.phase} />
             </div>
+
+            {/* Analyst Notes */}
+            <AnalystNotes nowcast={nowcast} />
 
             {/* Disclaimer */}
             <div className="text-xs text-slate-400 text-center py-4 border-t border-slate-200">
