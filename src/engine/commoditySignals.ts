@@ -38,12 +38,11 @@ function computeYoY(
   return ((current - yearAgo) / yearAgo) * 100;
 }
 
-// Weights reflect speed and magnitude of CPI pass-through.
-// Energy dominates headline CPI moves in the short run.
+// Weights for composite commodity signal
 const WEIGHTS = {
-  brent: 0.45,
-  crb: 0.25,
-  faoFood: 0.30,
+  brent: 0.35,
+  crb: 0.30,
+  faoFood: 0.35,
 };
 
 export function analyzeCommoditySignals(
