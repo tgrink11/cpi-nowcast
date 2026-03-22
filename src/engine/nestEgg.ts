@@ -68,7 +68,7 @@ export function calculateNestEgg(inputs: CalculatorInputs): CalculationResult {
 
     yearProjections.push({
       year: n + 1,
-      age: inputs.retirementAge + n + 1,
+      age: inputs.retirementAge + n,
       healthShare: healthShares[n],
       effectiveInflation: effectiveInflations[n],
       grossSpend: grossSpending[n],

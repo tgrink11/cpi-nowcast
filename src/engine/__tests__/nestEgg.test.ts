@@ -5,7 +5,7 @@ import { DEFAULT_INPUTS } from '../../state/defaults';
 describe('calculateNestEgg', () => {
   it('computes a reasonable nest egg for default inputs', () => {
     const result = calculateNestEgg(DEFAULT_INPUTS);
-    // With default inputs (65 retire, 90 life, $60k spend), expect $1.5M-$2.5M range
+    // With default inputs (65 retire, 90 life, $60k spend), expect $1M-$3M range
     expect(result.requiredNestEgg).toBeGreaterThan(1_000_000);
     expect(result.requiredNestEgg).toBeLessThan(3_000_000);
   });
@@ -14,6 +14,11 @@ describe('calculateNestEgg', () => {
     const result = calculateNestEgg(DEFAULT_INPUTS);
     expect(result.yearProjections).toHaveLength(25); // 90 - 65
     expect(result.retirementYears).toBe(25);
+  });
+
+  it('first year age equals retirement age', () => {
+    const result = calculateNestEgg(DEFAULT_INPUTS);
+    expect(result.yearProjections[0].age).toBe(DEFAULT_INPUTS.retirementAge);
   });
 
   it('has monotonically increasing cumulative PV', () => {

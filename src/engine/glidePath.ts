@@ -20,6 +20,28 @@ const GLIDE_ASSETS = [
   { name: 'Short-Term Reserves', annualVolatility: 0.02, expectedReturn: 0.03, color: '#64748b' },
 ];
 
+// Correlation matrix: [USEq, IntlEq, USBonds, TIPS, ShortTerm]
+// Based on long-run historical correlations
+const GLIDE_CORR: number[][] = [
+  [1.00, 0.85, -0.10, 0.05, 0.02],  // US Equities
+  [0.85, 1.00, -0.05, 0.10, 0.03],  // Intl Equities
+  [-0.10, -0.05, 1.00, 0.70, 0.60], // US Bonds
+  [0.05, 0.10, 0.70, 1.00, 0.50],   // TIPS
+  [0.02, 0.03, 0.60, 0.50, 1.00],   // Short-Term Reserves
+];
+
+/** Portfolio volatility using full covariance: sqrt(w' * Cov * w) */
+function portfolioVol(weights: number[], assets: typeof GLIDE_ASSETS, corr: number[][]): number {
+  let variance = 0;
+  for (let i = 0; i < weights.length; i++) {
+    for (let j = 0; j < weights.length; j++) {
+      variance += weights[i] * weights[j] *
+        assets[i].annualVolatility * assets[j].annualVolatility * corr[i][j];
+    }
+  }
+  return Math.sqrt(Math.max(0, variance));
+}
+
 export function calculateGlidePath(inputs: CalculatorInputs): PortfolioAllocation {
   const yearsToRetirement = Math.max(0, inputs.retirementAge - inputs.currentAge);
 
@@ -62,12 +84,7 @@ export function calculateGlidePath(inputs: CalculatorInputs): PortfolioAllocatio
     0
   );
 
-  const portfolioVolatility = Math.sqrt(
-    weights.reduce(
-      (sum, w, i) => sum + Math.pow(w * GLIDE_ASSETS[i].annualVolatility, 2),
-      0
-    )
-  );
+  const portfolioVolatility = portfolioVol(weights, GLIDE_ASSETS, GLIDE_CORR);
 
   return {
     allocations: GLIDE_ASSETS.map((asset, i) => ({

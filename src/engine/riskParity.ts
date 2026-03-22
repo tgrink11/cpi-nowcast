@@ -10,6 +10,28 @@ const ASSET_CLASSES: AssetClass[] = [
   { name: 'REITs', annualVolatility: 0.19, expectedReturn: 0.07, color: '#ec4899' },
 ];
 
+// Correlation matrix: [USEq, IntlEq, USBonds, TIPS, Commodities, REITs]
+const RP_CORR: number[][] = [
+  [1.00, 0.85, -0.10, 0.05, 0.15, 0.60],  // US Equities
+  [0.85, 1.00, -0.05, 0.10, 0.20, 0.55],  // Intl Equities
+  [-0.10, -0.05, 1.00, 0.70, -0.10, 0.10], // US Bonds
+  [0.05, 0.10, 0.70, 1.00, 0.15, 0.15],   // TIPS
+  [0.15, 0.20, -0.10, 0.15, 1.00, 0.25],  // Commodities
+  [0.60, 0.55, 0.10, 0.15, 0.25, 1.00],   // REITs
+];
+
+/** Portfolio volatility using full covariance: sqrt(w' * Cov * w) */
+function portfolioVol(weights: number[], assets: AssetClass[], corr: number[][]): number {
+  let variance = 0;
+  for (let i = 0; i < weights.length; i++) {
+    for (let j = 0; j < weights.length; j++) {
+      variance += weights[i] * weights[j] *
+        assets[i].annualVolatility * assets[j].annualVolatility * corr[i][j];
+    }
+  }
+  return Math.sqrt(Math.max(0, variance));
+}
+
 /**
  * Inverse-volatility Risk Parity allocation, adjusted for
  * time horizon, retirement length, and risk-need factor.
@@ -64,13 +86,7 @@ export function calculateRiskParity(
     0
   );
 
-  // Simplified volatility (ignores correlations — acceptable for a free tool)
-  const portfolioVolatility = Math.sqrt(
-    finalWeights.reduce(
-      (sum, w, i) => sum + Math.pow(w * ASSET_CLASSES[i].annualVolatility, 2),
-      0
-    )
-  );
+  const portfolioVolatility = portfolioVol(finalWeights, ASSET_CLASSES, RP_CORR);
 
   return {
     allocations: ASSET_CLASSES.map((asset, i) => ({
