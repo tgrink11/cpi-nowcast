@@ -22,16 +22,40 @@ function getMonthlyAverage(
   return matching.reduce((sum, d) => sum + d.value, 0) / matching.length;
 }
 
+/**
+ * Find the latest year-month in the data at or before the target.
+ * Returns null if no data exists at or before the target month.
+ */
+function findLatestAvailableMonth(
+  data: CommodityObservation[],
+  targetYearMonth: string
+): string | null {
+  const candidates = new Set<string>();
+  for (const d of data) {
+    const ym = d.date.slice(0, 7);
+    if (ym <= targetYearMonth) candidates.add(ym);
+  }
+  if (candidates.size === 0) return null;
+  return [...candidates].sort().pop()!;
+}
+
 function computeYoY(
   data: CommodityObservation[],
   targetMonth: string
 ): number | null {
   const ym = targetMonth.slice(0, 7);
-  const d = new Date(targetMonth);
+
+  // If the target month has no data, fall back to the most recent month
+  const effectiveYm = getMonthlyAverage(data, ym) != null
+    ? ym
+    : findLatestAvailableMonth(data, ym);
+  if (effectiveYm == null) return null;
+
+  const d = new Date(effectiveYm + '-01');
   d.setFullYear(d.getFullYear() - 1);
   const ymAgo = d.toISOString().slice(0, 7);
 
-  const current = getMonthlyAverage(data, ym);
+  const current = getMonthlyAverage(data, effectiveYm);
   const yearAgo = getMonthlyAverage(data, ymAgo);
 
   if (current == null || yearAgo == null || yearAgo === 0) return null;
