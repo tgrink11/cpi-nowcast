@@ -3,67 +3,74 @@ import type {
   CommodityInputs,
   RateOfChangeSignal,
 } from '../types/cpiNowcast';
+import { computeCommodityCpiImpact } from './commoditySignals';
 
 /**
  * Step 3: Rate-of-Change Signal
- * Synthesize base effects and commodity inputs into a directional signal.
+ *
+ * Uses CPI basket-weighted pass-through rates so that large energy
+ * moves (e.g., +50% oil YoY) correctly produce a ~3-4pp CPI impact
+ * rather than the ~2pp the old single-coefficient model gave.
  */
-
-// Commodity pass-through coefficient: how much commodity YoY
-// translates to CPI YoY change. Empirically ~0.03-0.05 for energy,
-// lower for food. We use a blended coefficient.
-const COMMODITY_PASSTHROUGH = 0.04;
 
 export function computeRateOfChangeSignal(
   baseEffects: BaseEffectsAnalysis,
   commodityInputs: CommodityInputs
 ): RateOfChangeSignal {
-  // Start with the actual trailing YoY as anchor
   const trailingYoY = baseEffects.actualYoY;
 
-  // Adjust for commodity momentum
-  const commodityAdjustment = commodityInputs.compositeSignal * COMMODITY_PASSTHROUGH;
+  // Commodity impact using basket-weighted pass-through rates
+  const commodityImpact = computeCommodityCpiImpact(
+    commodityInputs.brentCrudeYoY,
+    commodityInputs.crbIndexYoY,
+    commodityInputs.faoFoodPriceYoY
+  );
 
-  // Base effect adjustment: if base is "easy", YoY tends higher; if "hard", lower
+  // The trailing YoY already reflects some prior commodity pass-through.
+  // Use dampening factor since not all commodity moves are incremental
+  // to the already-reported CPI reading.
+  const incrementalCommodityAdjustment = commodityImpact * 0.6;
+
+  // Base effect adjustment
   let baseAdjustment = 0;
   if (baseEffects.baseClassification === 'easy') {
-    baseAdjustment = 0.2; // easy base biases YoY up
+    baseAdjustment = 0.3;
   } else if (baseEffects.baseClassification === 'hard') {
-    baseAdjustment = -0.2; // hard base biases YoY down
+    baseAdjustment = -0.3;
   }
 
   // Inflection signal from 2-year base effect first difference
   let inflectionAdjustment = 0;
   if (baseEffects.inflectionSignal === 'accelerating') {
-    inflectionAdjustment = 0.1;
+    inflectionAdjustment = 0.15;
   } else if (baseEffects.inflectionSignal === 'decelerating') {
-    inflectionAdjustment = -0.1;
+    inflectionAdjustment = -0.15;
   }
 
   const pointEstimate =
-    trailingYoY + commodityAdjustment + baseAdjustment + inflectionAdjustment;
+    trailingYoY + incrementalCommodityAdjustment + baseAdjustment + inflectionAdjustment;
 
   // Uncertainty range: wider when commodity volatility is high
   const commodityVolatility = Math.abs(commodityInputs.compositeSignal);
-  const halfRange = 0.3 + commodityVolatility * 0.01;
+  const halfRange = 0.3 + commodityVolatility * 0.02;
 
   const probableRange = {
     low: Math.round((pointEstimate - halfRange) * 100) / 100,
     high: Math.round((pointEstimate + halfRange) * 100) / 100,
   };
 
-  // Direction: comparing our estimate to trailing
+  // Direction
   let direction: 'accelerating' | 'decelerating' | 'stable';
   const delta = pointEstimate - trailingYoY;
-  if (delta > 0.15) {
+  if (delta > 0.1) {
     direction = 'accelerating';
-  } else if (delta < -0.15) {
+  } else if (delta < -0.1) {
     direction = 'decelerating';
   } else {
     direction = 'stable';
   }
 
-  // Momentum alignment: are base effects and commodities pointing same way?
+  // Momentum alignment
   const baseDirection =
     baseEffects.baseClassification === 'easy'
       ? 'up'

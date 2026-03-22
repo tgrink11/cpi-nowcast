@@ -77,8 +77,14 @@ function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
   const latest = sorted[0].value;
   const prior = sorted[1].value;
 
-  // GDP growth rate: if latest quarter is higher than prior, growth is accelerating
-  return latest >= prior ? 'up' : 'down';
+  // Use both absolute level AND direction of change:
+  // - Below 1.5% annualized = weak growth → "down"
+  // - Decelerating from prior quarter → "down"
+  // This captures stagflation where growth is technically positive
+  // but decelerating (e.g., Q4 2025 GDP at 0.7% annualized)
+  if (latest < 1.5) return 'down';
+  if (latest < prior) return 'down';
+  return 'up';
 }
 
 export function classifyPhase(

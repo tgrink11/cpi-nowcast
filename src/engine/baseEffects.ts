@@ -72,11 +72,12 @@ export function analyzeBaseEffects(
 
   // Classify: if the base period had high inflation, it's a "hard" base
   // (current YoY will tend to look lower). Low base → "easy" (YoY looks higher).
-  const medianBaseEffect = 2.5; // roughly average annual CPI
+  // Tighter thresholds: median CPI ~2.5%, +-0.5% band for neutral
+  const medianBaseEffect = 2.5;
   let baseClassification: 'easy' | 'hard' | 'neutral';
-  if (oneYearBaseEffect > medianBaseEffect + 1) {
+  if (oneYearBaseEffect > medianBaseEffect + 0.5) {
     baseClassification = 'hard';
-  } else if (oneYearBaseEffect < medianBaseEffect - 1) {
+  } else if (oneYearBaseEffect < medianBaseEffect - 0.5) {
     baseClassification = 'easy';
   } else {
     baseClassification = 'neutral';
