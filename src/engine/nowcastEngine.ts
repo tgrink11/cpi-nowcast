@@ -71,6 +71,30 @@ export function runNowcast(
 }
 
 /**
+ * Shift a YYYY-MM-DD date string by the given number of months,
+ * keeping the result timezone-agnostic (always the 1st of the month).
+ */
+function shiftMonth(dateStr: string, months: number): string {
+  const [y, m] = dateStr.slice(0, 7).split('-').map(Number);
+  const total = y * 12 + (m - 1) + months;
+  const newY = Math.floor(total / 12);
+  const newM = (total % 12) + 1;
+  return `${newY}-${String(newM).padStart(2, '0')}-01`;
+}
+
+/**
+ * Format a YYYY-MM-DD string as "Mon YYYY" without timezone issues.
+ */
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+function formatMonthLabel(dateStr: string): string {
+  const [y, m] = dateStr.slice(0, 7).split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${y}`;
+}
+
+/**
  * Build chart data: 36-month backtest + 6-month forward projection.
  */
 export function buildChartData(
@@ -78,14 +102,11 @@ export function buildChartData(
   currentMonth: string
 ): CpiChartPoint[] {
   const points: CpiChartPoint[] = [];
-  const current = new Date(currentMonth);
 
   // 36 months of history
   for (let i = 35; i >= 0; i--) {
-    const d = new Date(current);
-    d.setMonth(d.getMonth() - i);
-    const monthStr = d.toISOString().slice(0, 10);
-    const ym = d.toISOString().slice(0, 7);
+    const monthStr = shiftMonth(currentMonth, -i);
+    const ym = monthStr.slice(0, 7);
 
     const baseEffects = analyzeBaseEffects(data.cpi, monthStr);
     const commodityInputs = analyzeCommoditySignals(
@@ -96,10 +117,7 @@ export function buildChartData(
     );
     const rateOfChange = computeRateOfChangeSignal(baseEffects, commodityInputs);
 
-    const label = d.toLocaleDateString('en-US', {
-      month: 'short',
-      year: 'numeric',
-    });
+    const label = formatMonthLabel(monthStr);
 
     points.push({
       date: label,
@@ -119,20 +137,14 @@ export function buildChartData(
   const latestCpi = data.cpi.length > 0 ? data.cpi[data.cpi.length - 1] : null;
 
   for (let i = 1; i <= 6; i++) {
-    const d = new Date(current);
-    d.setMonth(d.getMonth() + i);
-    const ym = d.toISOString().slice(0, 7);
+    const monthStr = shiftMonth(currentMonth, i);
+    const ym = monthStr.slice(0, 7);
 
-    const label = d.toLocaleDateString('en-US', {
-      month: 'short',
-      year: 'numeric',
-    });
+    const label = formatMonthLabel(monthStr);
 
     // Forward projection: use current nowcast adjusted by base effect trend
     // Each month further out adds uncertainty
-    const futureBaseMonth = new Date(current);
-    futureBaseMonth.setMonth(futureBaseMonth.getMonth() + i);
-    const futureBase = analyzeBaseEffects(data.cpi, futureBaseMonth.toISOString().slice(0, 10));
+    const futureBase = analyzeBaseEffects(data.cpi, monthStr);
 
     // Decay commodity signal over time (less reliable further out)
     const decayFactor = Math.pow(0.85, i);

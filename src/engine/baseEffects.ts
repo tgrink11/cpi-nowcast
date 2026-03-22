@@ -10,23 +10,31 @@ function findClosestObservation(
   data: CpiObservation[],
   targetDate: string
 ): CpiObservation | undefined {
-  const target = new Date(targetDate).getTime();
+  // Compare by YYYY-MM to avoid timezone issues with Date parsing
+  const targetYm = targetDate.slice(0, 7);
   let closest: CpiObservation | undefined;
-  let minDiff = Infinity;
+  let minMonthDiff = Infinity;
   for (const obs of data) {
-    const diff = Math.abs(new Date(obs.date).getTime() - target);
-    if (diff < minDiff) {
-      minDiff = diff;
+    const obsYm = obs.date.slice(0, 7);
+    const [ty, tm] = targetYm.split('-').map(Number);
+    const [oy, om] = obsYm.split('-').map(Number);
+    const diff = Math.abs((ty * 12 + tm) - (oy * 12 + om));
+    if (diff < minMonthDiff) {
+      minMonthDiff = diff;
       closest = obs;
     }
   }
+  // Only match within 2 months to avoid stale data
+  if (minMonthDiff > 2) return undefined;
   return closest;
 }
 
 function shiftMonths(dateStr: string, months: number): string {
-  const d = new Date(dateStr);
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
+  const [y, m] = dateStr.slice(0, 7).split('-').map(Number);
+  const total = y * 12 + (m - 1) + months;
+  const newY = Math.floor(total / 12);
+  const newM = (total % 12) + 1;
+  return `${newY}-${String(newM).padStart(2, '0')}-01`;
 }
 
 export function analyzeBaseEffects(
