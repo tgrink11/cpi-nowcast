@@ -159,18 +159,41 @@ export function buildChartData(
   const points: CpiChartPoint[] = [];
 
   // 36 months of history
+  //
+  // The historical "model" line is a TRUE BACKTEST: for each month M, we
+  // compute what the model would have predicted for M given only data
+  // through M-1. That is:
+  //
+  //     modelYoY[M] = actualYoY(M-1) + overlays(M)
+  //
+  // Anchoring on M-1's actual instead of M's actual is the difference
+  // between "forecast skill" and "overlay noise on top of perfect data".
+  // The overlays themselves still use month M's base effects + commodity
+  // signals, since both are computable from data available at end of M-1
+  // (year-ago / two-year-ago CPI levels are historical, commodity prices
+  // are real-time).
   for (let i = 35; i >= 0; i--) {
     const monthStr = shiftMonth(currentMonth, -i);
     const ym = monthStr.slice(0, 7);
 
     const baseEffects = analyzeBaseEffects(data.cpi, monthStr);
+    const priorBaseEffects = analyzeBaseEffects(
+      data.cpi,
+      shiftMonth(monthStr, -1)
+    );
     const commodityInputs = analyzeCommoditySignals(
       data.brent,
       data.ppiaco,
       data.faoFood,
       monthStr
     );
-    const rateOfChange = computeRateOfChangeSignal(baseEffects, commodityInputs);
+
+    const overlays = computeNowcastOverlays(baseEffects, commodityInputs);
+    const trailingAnchor =
+      priorBaseEffects.currentCpiLevel > 0
+        ? priorBaseEffects.actualYoY
+        : baseEffects.actualYoY;
+    const modelYoY = trailingAnchor + overlays.total;
 
     const label = formatMonthLabel(monthStr);
 
@@ -181,7 +204,7 @@ export function buildChartData(
         baseEffects.currentCpiLevel > 0
           ? Math.round(baseEffects.actualYoY * 100) / 100
           : null,
-      modelYoY: Math.round(rateOfChange.pointEstimate * 100) / 100,
+      modelYoY: Math.round(modelYoY * 100) / 100,
       projectedYoY: null,
     });
   }

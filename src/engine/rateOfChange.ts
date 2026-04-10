@@ -26,19 +26,29 @@ export interface NowcastOverlays {
  * Shared between the current-month nowcast and the forward projection so
  * that both use identical commodity, base-effect, and inflection logic.
  */
+// Fraction of (saturated) commodity impact that is incremental to the
+// already-reported trailing CPI reading. The remainder is assumed to already
+// be embedded in trailing.
+//
+// Empirically, in 2023-2025 the actual CPI YoY moved by ~0.1-0.3pp
+// month-to-month even when commodity YoY moved by tens of pp, which says
+// trailing CPI absorbs ~70-80% of commodity impact and only ~20-30% remains
+// as a forward delta. 0.6 (the previous value) implied 40% absorption,
+// which over-attributed forecast power to commodities and produced a
+// historical model line that oscillated 5x more than actual CPI.
+const COMMODITY_DAMPENING = 0.3;
+
 export function computeNowcastOverlays(
   baseEffects: BaseEffectsAnalysis,
   commodityInputs: CommodityInputs
 ): NowcastOverlays {
   // Commodity impact using basket-weighted pass-through rates.
-  // Dampening factor reflects that not all commodity moves are incremental
-  // to the already-reported CPI reading.
   const commodityImpact = computeCommodityCpiImpact(
     commodityInputs.brentCrudeYoY,
     commodityInputs.crbIndexYoY,
     commodityInputs.faoFoodPriceYoY
   );
-  const commodityAdjustment = commodityImpact * 0.6;
+  const commodityAdjustment = commodityImpact * COMMODITY_DAMPENING;
 
   // Base effect adjustment
   let baseAdjustment = 0;
