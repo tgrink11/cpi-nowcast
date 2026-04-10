@@ -13,23 +13,32 @@ import { computeCommodityCpiImpact } from './commoditySignals';
  * rather than the ~2pp the old single-coefficient model gave.
  */
 
-export function computeRateOfChangeSignal(
+export interface NowcastOverlays {
+  commodityAdjustment: number;
+  baseAdjustment: number;
+  inflectionAdjustment: number;
+  total: number;
+}
+
+/**
+ * Pure per-month overlay adjustments added on top of a trailing YoY anchor.
+ *
+ * Shared between the current-month nowcast and the forward projection so
+ * that both use identical commodity, base-effect, and inflection logic.
+ */
+export function computeNowcastOverlays(
   baseEffects: BaseEffectsAnalysis,
   commodityInputs: CommodityInputs
-): RateOfChangeSignal {
-  const trailingYoY = baseEffects.actualYoY;
-
-  // Commodity impact using basket-weighted pass-through rates
+): NowcastOverlays {
+  // Commodity impact using basket-weighted pass-through rates.
+  // Dampening factor reflects that not all commodity moves are incremental
+  // to the already-reported CPI reading.
   const commodityImpact = computeCommodityCpiImpact(
     commodityInputs.brentCrudeYoY,
     commodityInputs.crbIndexYoY,
     commodityInputs.faoFoodPriceYoY
   );
-
-  // The trailing YoY already reflects some prior commodity pass-through.
-  // Use dampening factor since not all commodity moves are incremental
-  // to the already-reported CPI reading.
-  const incrementalCommodityAdjustment = commodityImpact * 0.6;
+  const commodityAdjustment = commodityImpact * 0.6;
 
   // Base effect adjustment
   let baseAdjustment = 0;
@@ -47,8 +56,21 @@ export function computeRateOfChangeSignal(
     inflectionAdjustment = -0.15;
   }
 
-  const pointEstimate =
-    trailingYoY + incrementalCommodityAdjustment + baseAdjustment + inflectionAdjustment;
+  return {
+    commodityAdjustment,
+    baseAdjustment,
+    inflectionAdjustment,
+    total: commodityAdjustment + baseAdjustment + inflectionAdjustment,
+  };
+}
+
+export function computeRateOfChangeSignal(
+  baseEffects: BaseEffectsAnalysis,
+  commodityInputs: CommodityInputs
+): RateOfChangeSignal {
+  const trailingYoY = baseEffects.actualYoY;
+  const overlays = computeNowcastOverlays(baseEffects, commodityInputs);
+  const pointEstimate = trailingYoY + overlays.total;
 
   // Uncertainty range: wider when commodity volatility is high
   const commodityVolatility = Math.abs(commodityInputs.compositeSignal);
