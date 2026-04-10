@@ -122,9 +122,32 @@ const PASSTHROUGH_RATES = {
   faoFood: 0.04,   // food ~13.5% but not all food tracks FAO
 };
 
+// Saturation scale for commodity YoY pass-through (in percentage points).
+//
+// The pass-through rates above are linear approximations valid for typical
+// ±10-20% YoY commodity moves. They overshoot badly for large shocks because
+// real-world pass-through saturates: refining margins compress, demand
+// destruction caps gasoline retail prices, and basket weights are not
+// constant. Empirical pass-through of crude → retail gasoline is roughly
+// 30-50% for moves of ±50%+ YoY, not 100%.
+//
+// We squash each commodity YoY through tanh(yoy / SCALE) * SCALE before
+// applying the pass-through rate. For |yoy| ≪ SCALE the function is
+// essentially linear (model behavior unchanged). For |yoy| ≫ SCALE the
+// effective YoY asymptotes to ±SCALE, capping each commodity's contribution
+// to ±SCALE × passThrough.
+const SATURATION_SCALE = 25;
+
+function saturateYoY(yoy: number): number {
+  return SATURATION_SCALE * Math.tanh(yoy / SATURATION_SCALE);
+}
+
 /**
  * Compute estimated CPI impact from commodity moves using
  * CPI basket pass-through rates rather than a single blended coefficient.
+ *
+ * Per-commodity YoY values are passed through a saturating tanh first, so
+ * a +60% Brent shock contributes ~1.8pp instead of the linear ~4.5pp.
  */
 export function computeCommodityCpiImpact(
   brentYoY: number | null,
@@ -132,8 +155,8 @@ export function computeCommodityCpiImpact(
   faoFoodYoY: number | null
 ): number {
   let impact = 0;
-  if (brentYoY != null) impact += brentYoY * PASSTHROUGH_RATES.brent;
-  if (crbYoY != null) impact += crbYoY * PASSTHROUGH_RATES.crb;
-  if (faoFoodYoY != null) impact += faoFoodYoY * PASSTHROUGH_RATES.faoFood;
+  if (brentYoY != null) impact += saturateYoY(brentYoY) * PASSTHROUGH_RATES.brent;
+  if (crbYoY != null) impact += saturateYoY(crbYoY) * PASSTHROUGH_RATES.crb;
+  if (faoFoodYoY != null) impact += saturateYoY(faoFoodYoY) * PASSTHROUGH_RATES.faoFood;
   return impact;
 }
