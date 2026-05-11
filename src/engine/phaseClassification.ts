@@ -66,6 +66,25 @@ const PHASE_DEFINITIONS: Record<
   },
 };
 
+/**
+ * Returns the effective growth direction used for phase classification.
+ *
+ * Despite the name, this combines a level rule and a direction rule:
+ *   - Latest quarter below 1.5% annualized → "down" regardless of trend.
+ *   - Latest quarter decelerating from prior → "down".
+ *   - Otherwise → "up".
+ *
+ * This is deliberate. A pure direction comparison would classify 0.3% → 0.7%
+ * as "up" (growth accelerating) and put the regime in Phase 1/Goldilocks,
+ * which mis-represents what a sub-trend-growth environment feels like. The
+ * level floor catches stagflation cases where growth is technically positive
+ * but too weak to be expansionary (e.g., Q4 2025 GDP at 0.7% annualized).
+ *
+ * The output is consumed by `classifyPhase` as a binary growth dimension; if
+ * a future caller needs to distinguish "weak-but-accelerating" from "strong-
+ * and-decelerating," add a separate `growthRegime` field rather than relaxing
+ * this rule.
+ */
 function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
   if (gdpData.length < 2) return 'up'; // default assumption
 
@@ -77,11 +96,6 @@ function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
   const latest = sorted[0].value;
   const prior = sorted[1].value;
 
-  // Use both absolute level AND direction of change:
-  // - Below 1.5% annualized = weak growth → "down"
-  // - Decelerating from prior quarter → "down"
-  // This captures stagflation where growth is technically positive
-  // but decelerating (e.g., Q4 2025 GDP at 0.7% annualized)
   if (latest < 1.5) return 'down';
   if (latest < prior) return 'down';
   return 'up';
@@ -92,6 +106,13 @@ export function classifyPhase(
   gdpData: CommodityObservation[]
 ): PhaseClassification {
   const growthDirection = getGdpDirection(gdpData);
+  // The phase grid is 2x2 (up/down × up/down), so "stable" inflation needs
+  // to be projected onto either "up" or "down." We treat stable as "down"
+  // (i.e., not accelerating) because the asset-class implications of stable
+  // inflation are closer to those of decelerating inflation than to
+  // accelerating: bond duration, growth equities, and quality factors still
+  // benefit when CPI is anchored. If a future caller wants a 3-state grid,
+  // expand `EconomicPhase` rather than retuning this mapping.
   const inflationDirection: 'up' | 'down' =
     rateOfChange.direction === 'accelerating' ? 'up' : 'down';
 

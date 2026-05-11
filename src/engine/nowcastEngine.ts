@@ -3,74 +3,29 @@ import type {
   NowcastOutput,
   CpiChartPoint,
   CpiObservation,
-  CommodityInputs,
 } from '../types/cpiNowcast';
 import { analyzeBaseEffects } from './baseEffects';
 import { analyzeCommoditySignals } from './commoditySignals';
-import { computeRateOfChangeSignal, computeNowcastOverlays } from './rateOfChange';
+import {
+  computeNowcastOverlays,
+  buildRateOfChangeSignal,
+} from './rateOfChange';
 import { classifyPhase } from './phaseClassification';
 
 /**
  * Step 5: Nowcast Engine
- * Orchestrates all steps for a given target month.
+ *
+ * The headline nowcast targets the FIRST UNREPORTED month — i.e., the month
+ * after the latest CPI release. The chart "model" line is a clean backtest
+ * (anchored on M-1's actual YoY, with overlay inputs scrubbed of M's CPI and
+ * of slow-publishing commodity series). The chart "projection" line extends
+ * the nowcast forward 6 months by walking projected CPI levels.
  */
 
-export function runNowcast(
-  data: RawDataBundle,
-  targetMonth: string
-): NowcastOutput {
-  // Step 1: Base Effects (anchored to latest CPI report month)
-  const baseEffects = analyzeBaseEffects(data.cpi, targetMonth);
-
-  // Step 2: Commodity Signals
-  // Use the current calendar month for commodity signals when it's ahead
-  // of the latest CPI report, since commodity prices are available in
-  // real-time even when CPI hasn't been reported yet.
-  const today = new Date().toISOString().slice(0, 10);
-  const commodityMonth = today > targetMonth ? today : targetMonth;
-  const commodityInputs = analyzeCommoditySignals(
-    data.brent,
-    data.ppiaco,
-    data.faoFood,
-    commodityMonth
-  );
-
-  // Step 3: Rate of Change Signal
-  const rateOfChange = computeRateOfChangeSignal(baseEffects, commodityInputs);
-
-  // Step 4: Phase Classification
-  const phase = classifyPhase(rateOfChange, data.gdpGrowth);
-
-  // Step 5: Confidence assessment
-  let confidence: 'high' | 'medium' | 'low';
-  let confidenceRationale: string;
-
-  if (rateOfChange.momentumAligned && Math.abs(rateOfChange.pointEstimate - baseEffects.actualYoY) < 0.5) {
-    confidence = 'high';
-    confidenceRationale =
-      'Base effects and commodity signals are aligned; estimate close to trailing YoY';
-  } else if (!rateOfChange.momentumAligned) {
-    confidence = 'low';
-    confidenceRationale =
-      'Base effects and commodity signals diverge — higher uncertainty';
-  } else {
-    confidence = 'medium';
-    confidenceRationale =
-      'Signals partially aligned; moderate deviation from trailing YoY';
-  }
-
-  return {
-    asOfDate: targetMonth,
-    nowcastCpiYoY: rateOfChange.pointEstimate,
-    direction: rateOfChange.direction,
-    confidence,
-    confidenceRationale,
-    phase,
-    baseEffects,
-    commodityInputs,
-    rateOfChange,
-  };
-}
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 
 /**
  * Shift a YYYY-MM-DD date string by the given number of months,
@@ -84,13 +39,6 @@ function shiftMonth(dateStr: string, months: number): string {
   return `${newY}-${String(newM).padStart(2, '0')}-01`;
 }
 
-/**
- * Format a YYYY-MM-DD string as "Mon YYYY" without timezone issues.
- */
-const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
 function formatMonthLabel(dateStr: string): string {
   const [y, m] = dateStr.slice(0, 7).split('-').map(Number);
   return `${MONTH_NAMES[m - 1]} ${y}`;
@@ -111,8 +59,6 @@ function computeSeasonalMomFactors(
   const offsets = new Array(12).fill(0);
   if (cpiData.length < 13) return offsets;
 
-  // Sorted ascending by convention (cpiDataService sorts on merge). Walk the
-  // tail of the series up to yearsOfHistory * 12 months back.
   const lookback = Math.min(cpiData.length - 1, yearsOfHistory * 12);
   const startIdx = cpiData.length - 1 - lookback;
 
@@ -143,10 +89,121 @@ function computeSeasonalMomFactors(
 }
 
 /**
- * Decay a commodity YoY reading by a multiplicative factor. Null passes through.
+ * Project a CPI level forward by one month using a trend rate derived from
+ * trailing YoY plus the calendar month's seasonal offset.
  */
-function decayYoY(value: number | null, factor: number): number | null {
-  return value == null ? null : value * factor;
+function projectCpiForward(
+  priorLevel: number,
+  trailingYoY: number,
+  seasonalOffsets: number[],
+  targetMonth: string
+): number {
+  const trendMoM = Math.pow(1 + trailingYoY / 100, 1 / 12) - 1;
+  const monthIdx = Number(targetMonth.slice(5, 7)) - 1;
+  const seasonal = seasonalOffsets[monthIdx] ?? 0;
+  return priorLevel * (1 + trendMoM + seasonal);
+}
+
+/**
+ * Run a forward nowcast targeted at `latestCpiMonth + 1`.
+ *
+ * The trailing anchor is the latest reported actual YoY. Overlay inputs are
+ * computed for the target month using a projected CPI level for that month
+ * (so base effects, commodity, and inflection signals all reflect the period
+ * we're nowcasting — not the period we already have data for).
+ */
+export function runNowcast(
+  data: RawDataBundle,
+  latestCpiMonth: string
+): NowcastOutput {
+  const target = shiftMonth(latestCpiMonth, 1);
+
+  // Trailing snapshot: real, fully-reported state. Used as the YoY anchor
+  // AND as the BaseEffectsAnalysis surfaced in the UI.
+  const trailingBase = analyzeBaseEffects(data.cpi, latestCpiMonth);
+  const trailingYoY = trailingBase.actualYoY;
+
+  // Project a CPI level for the target month so we can compute target-month
+  // base effects honestly (rather than letting findClosestObservation return
+  // a stale level or zero).
+  const seasonalOffsets = computeSeasonalMomFactors(data.cpi, 5);
+  const projectedTargetCpi = projectCpiForward(
+    trailingBase.currentCpiLevel,
+    trailingYoY,
+    seasonalOffsets,
+    target
+  );
+
+  // Target-month overlay inputs. The base effects analysis is computed with
+  // the projected level so twoYearBaseEffect and inflectionSignal reflect
+  // the right period.
+  const targetBase = analyzeBaseEffects(data.cpi, target, {
+    currentLevelOverride: projectedTargetCpi,
+    priorMonthLevelOverride: trailingBase.currentCpiLevel,
+  });
+
+  // Real-time commodity readings for the target month (Brent is daily, PPI
+  // and FAO publish mid-following-month — `analyzeCommoditySignals` falls
+  // back to the latest available month per series).
+  const commodityInputs = analyzeCommoditySignals(
+    data.brent,
+    data.ppiaco,
+    data.faoFood,
+    target
+  );
+
+  // Forward overlays exclude the discretionary baseAdjustment because the
+  // mechanical base effect is already encoded in targetBase.actualYoY
+  // (projected CPI vs real year-ago CPI).
+  const overlays = computeNowcastOverlays(targetBase, commodityInputs, {
+    excludeBaseAdjustment: true,
+  });
+  const pointEstimate = targetBase.actualYoY + overlays.total;
+  const { signal: rateOfChange, pointEstimateUnrounded } =
+    buildRateOfChangeSignal(
+      pointEstimate,
+      trailingYoY,
+      targetBase,
+      commodityInputs
+    );
+
+  const phase = classifyPhase(rateOfChange, data.gdpGrowth);
+
+  // Confidence: use the unrounded point estimate so the threshold isn't
+  // perturbed by 2-decimal rounding in rateOfChange.pointEstimate.
+  let confidence: 'high' | 'medium' | 'low';
+  let confidenceRationale: string;
+  if (
+    rateOfChange.momentumAligned &&
+    Math.abs(pointEstimateUnrounded - trailingYoY) < 0.5
+  ) {
+    confidence = 'high';
+    confidenceRationale =
+      'Base effects and commodity signals are aligned; estimate close to trailing YoY';
+  } else if (!rateOfChange.momentumAligned) {
+    confidence = 'low';
+    confidenceRationale =
+      'Base effects and commodity signals diverge — higher uncertainty';
+  } else {
+    confidence = 'medium';
+    confidenceRationale =
+      'Signals partially aligned; moderate deviation from trailing YoY';
+  }
+
+  return {
+    asOfDate: target,
+    nowcastCpiYoY: rateOfChange.pointEstimate,
+    direction: rateOfChange.direction,
+    confidence,
+    confidenceRationale,
+    phase,
+    // Surface the trailing (fully-reported) base effects in the UI. Overlay
+    // math uses target-month base effects internally, but the user wants to
+    // see actual current numbers, not projections.
+    baseEffects: trailingBase,
+    commodityInputs,
+    rateOfChange,
+  };
 }
 
 /**
@@ -154,38 +211,49 @@ function decayYoY(value: number | null, factor: number): number | null {
  */
 export function buildChartData(
   data: RawDataBundle,
-  currentMonth: string
+  latestCpiMonth: string
 ): CpiChartPoint[] {
   const points: CpiChartPoint[] = [];
 
-  // 36 months of history
+  // ---------- 36 months of historical backtest ----------
   //
-  // The historical "model" line is a TRUE BACKTEST: for each month M, we
-  // compute what the model would have predicted for M given only data
-  // through M-1. That is:
+  // For each month M:
   //
   //     modelYoY[M] = actualYoY(M-1) + overlays(M)
   //
-  // Anchoring on M-1's actual instead of M's actual is the difference
-  // between "forecast skill" and "overlay noise on top of perfect data".
-  // The overlays themselves still use month M's base effects + commodity
-  // signals, since both are computable from data available at end of M-1
-  // (year-ago / two-year-ago CPI levels are historical, commodity prices
-  // are real-time).
+  // Anchoring on M-1's actual YoY (rather than M's) means the model can't
+  // see its own answer key. The overlays for M are computed from inputs that
+  // would have been knowable at end of M-1:
+  //   - oneYearBaseEffect: historical CPI only — safe
+  //   - twoYearBaseEffect / inflectionSignal: would otherwise leak M's CPI
+  //     level via the `current` term. We pass M-1's level as the override so
+  //     the computation uses (M-1's CPI / M-24's CPI) instead.
+  //   - Commodity: Brent is daily/real-time (safe), but PPI and FAO publish
+  //     mid-(M+1). We lag those two series by one month for the backtest.
   for (let i = 35; i >= 0; i--) {
-    const monthStr = shiftMonth(currentMonth, -i);
+    const monthStr = shiftMonth(latestCpiMonth, -i);
     const ym = monthStr.slice(0, 7);
 
-    const baseEffects = analyzeBaseEffects(data.cpi, monthStr);
     const priorBaseEffects = analyzeBaseEffects(
       data.cpi,
       shiftMonth(monthStr, -1)
     );
+    const priorPriorBase = analyzeBaseEffects(
+      data.cpi,
+      shiftMonth(monthStr, -2)
+    );
+
+    const baseEffects = analyzeBaseEffects(data.cpi, monthStr, {
+      currentLevelOverride: priorBaseEffects.currentCpiLevel,
+      priorMonthLevelOverride: priorPriorBase.currentCpiLevel,
+    });
+
     const commodityInputs = analyzeCommoditySignals(
       data.brent,
       data.ppiaco,
       data.faoFood,
-      monthStr
+      monthStr,
+      { lagSlowSeries: true }
     );
 
     const overlays = computeNowcastOverlays(baseEffects, commodityInputs);
@@ -195,14 +263,17 @@ export function buildChartData(
         : baseEffects.actualYoY;
     const modelYoY = trailingAnchor + overlays.total;
 
+    // The chart's "Actual YoY" line uses the genuine reported value, sourced
+    // directly from the CPI series (not from any override).
+    const realCurrent = analyzeBaseEffects(data.cpi, monthStr);
     const label = formatMonthLabel(monthStr);
 
     points.push({
       date: label,
       month: ym,
       actualYoY:
-        baseEffects.currentCpiLevel > 0
-          ? Math.round(baseEffects.actualYoY * 100) / 100
+        realCurrent.currentCpiLevel > 0
+          ? Math.round(realCurrent.actualYoY * 100) / 100
           : null,
       modelYoY: Math.round(modelYoY * 100) / 100,
       projectedYoY: null,
@@ -211,80 +282,61 @@ export function buildChartData(
 
   // ---------- 6-month forward projection ----------
   //
-  // Methodology:
-  //   1. Walk a projected CPI level forward month by month using (a) a trend
-  //      monthly rate derived from the latest *trailing* YoY (pure persistence,
-  //      no overlays baked in) plus (b) a seasonal MoM offset from history.
-  //   2. For each future month, compute a base YoY from (projected CPI) vs
-  //      (real year-ago CPI) — this naturally captures base-effect dynamics
-  //      because the denominator is real historical data.
-  //   3. Add the standard nowcast overlays (commodity + base classification +
-  //      inflection) using the *future* month's base-effect analysis and a
-  //      decayed version of the latest commodity signals.
-  //
-  // This mirrors exactly what runNowcast does for the current month:
-  //     nowcastYoY = trailingYoY + overlays
-  // but with the trailing anchor replaced by a forward-walked projected YoY.
-
-  const latestNowcast = runNowcast(data, currentMonth);
+  // Walk the CPI level forward month by month using trend + seasonal offset.
+  // For each future month, compute target base effects with the projected
+  // level as `currentLevelOverride`, then add overlays.
   const latestCpi = data.cpi.length > 0 ? data.cpi[data.cpi.length - 1] : null;
+  if (!latestCpi) return points;
 
-  if (latestCpi) {
-    const seasonalOffsets = computeSeasonalMomFactors(data.cpi, 5);
-    // Trend MoM from trailing YoY (NOT full nowcast YoY — overlays are added
-    // back in per month, so using nowcastYoY here would double-count).
-    const trailingYoY = latestNowcast.baseEffects.actualYoY;
-    const trendMoM = Math.pow(1 + trailingYoY / 100, 1 / 12) - 1;
+  const seasonalOffsets = computeSeasonalMomFactors(data.cpi, 5);
+  const trailingBase = analyzeBaseEffects(data.cpi, latestCpiMonth);
+  const trailingYoY = trailingBase.actualYoY;
 
-    let projectedCpi = latestCpi.value;
+  let projectedCpi = trailingBase.currentCpiLevel;
 
-    for (let i = 1; i <= 6; i++) {
-      const monthStr = shiftMonth(currentMonth, i);
-      const ym = monthStr.slice(0, 7);
-      const label = formatMonthLabel(monthStr);
-      const calendarMonthIdx = Number(monthStr.slice(5, 7)) - 1;
+  for (let i = 1; i <= 6; i++) {
+    const monthStr = shiftMonth(latestCpiMonth, i);
+    const ym = monthStr.slice(0, 7);
+    const label = formatMonthLabel(monthStr);
 
-      // Walk CPI level forward: trend + seasonal offset for this calendar month
-      const seasonal = seasonalOffsets[calendarMonthIdx] ?? 0;
-      projectedCpi = projectedCpi * (1 + trendMoM + seasonal);
+    const priorProjectedCpi = projectedCpi;
+    projectedCpi = projectCpiForward(
+      priorProjectedCpi,
+      trailingYoY,
+      seasonalOffsets,
+      monthStr
+    );
 
-      const futureBase = analyzeBaseEffects(data.cpi, monthStr);
+    const futureBase = analyzeBaseEffects(data.cpi, monthStr, {
+      currentLevelOverride: projectedCpi,
+      priorMonthLevelOverride: priorProjectedCpi,
+    });
 
-      // Base YoY comes from projected CPI vs real year-ago CPI. If year-ago
-      // data is unavailable, fall back to holding the trailing YoY flat.
-      let baseYoY: number;
-      if (futureBase.yearAgoCpiLevel > 0) {
-        baseYoY =
-          ((projectedCpi - futureBase.yearAgoCpiLevel) /
-            futureBase.yearAgoCpiLevel) *
-          100;
-      } else {
-        baseYoY = trailingYoY;
-      }
+    // Use the commodity reading for the target future month if available;
+    // analyzeCommoditySignals will fall back to the latest available month
+    // per series when the target month has no data yet. No artificial decay:
+    // commodity YoY is already a month-specific reading.
+    const commodityInputs = analyzeCommoditySignals(
+      data.brent,
+      data.ppiaco,
+      data.faoFood,
+      monthStr
+    );
 
-      // Decay commodity inputs: as we project further out, current commodity
-      // YoY readings are less informative about the future path. 0.85^i gives
-      // a rough 4-month half-life, consistent with typical energy pass-through.
-      const decay = Math.pow(0.85, i);
-      const decayedCommodity: CommodityInputs = {
-        brentCrudeYoY: decayYoY(latestNowcast.commodityInputs.brentCrudeYoY, decay),
-        crbIndexYoY: decayYoY(latestNowcast.commodityInputs.crbIndexYoY, decay),
-        faoFoodPriceYoY: decayYoY(latestNowcast.commodityInputs.faoFoodPriceYoY, decay),
-        compositeSignal: latestNowcast.commodityInputs.compositeSignal * decay,
-        signalDirection: latestNowcast.commodityInputs.signalDirection,
-      };
+    // Exclude baseAdjustment to avoid double-counting with the mechanical
+    // base effect already encoded in futureBase.actualYoY.
+    const overlays = computeNowcastOverlays(futureBase, commodityInputs, {
+      excludeBaseAdjustment: true,
+    });
+    const projected = futureBase.actualYoY + overlays.total;
 
-      const overlays = computeNowcastOverlays(futureBase, decayedCommodity);
-      const projected = baseYoY + overlays.total;
-
-      points.push({
-        date: label,
-        month: ym,
-        actualYoY: null,
-        modelYoY: null,
-        projectedYoY: Math.round(projected * 100) / 100,
-      });
-    }
+    points.push({
+      date: label,
+      month: ym,
+      actualYoY: null,
+      modelYoY: null,
+      projectedYoY: Math.round(projected * 100) / 100,
+    });
   }
 
   return points;

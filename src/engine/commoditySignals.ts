@@ -62,40 +62,51 @@ function computeYoY(
   return ((current - yearAgo) / yearAgo) * 100;
 }
 
-// Weights for composite commodity signal
+// Weights for composite commodity signal (must sum to 1.0)
 const WEIGHTS = {
   brent: 0.35,
   crb: 0.30,
   faoFood: 0.35,
 };
 
+export interface CommoditySignalOptions {
+  // Lag PPI and FAO Food by one month. These series publish mid-following-month,
+  // so a clean backtest of month M cannot use M's PPI/FAO values — only M-1's.
+  // Brent is daily and available in real time, so it is never lagged.
+  lagSlowSeries?: boolean;
+}
+
+function shiftYearMonth(targetMonth: string, monthDelta: number): string {
+  const [y, m] = targetMonth.slice(0, 7).split('-').map(Number);
+  const total = y * 12 + (m - 1) + monthDelta;
+  const newY = Math.floor(total / 12);
+  const newM = (total % 12) + 1;
+  return `${newY}-${String(newM).padStart(2, '0')}-01`;
+}
+
 export function analyzeCommoditySignals(
   brentData: CommodityObservation[],
   ppiacoData: CommodityObservation[],
   faoFoodData: CommodityObservation[],
-  targetMonth: string
+  targetMonth: string,
+  options?: CommoditySignalOptions
 ): CommodityInputs {
+  const slowTarget = options?.lagSlowSeries
+    ? shiftYearMonth(targetMonth, -1)
+    : targetMonth;
+
   const brentYoY = computeYoY(brentData, targetMonth);
-  const crbYoY = computeYoY(ppiacoData, targetMonth);
-  const faoFoodYoY = computeYoY(faoFoodData, targetMonth);
+  const crbYoY = computeYoY(ppiacoData, slowTarget);
+  const faoFoodYoY = computeYoY(faoFoodData, slowTarget);
 
-  let totalWeight = 0;
-  let weightedSum = 0;
-
-  if (brentYoY != null) {
-    weightedSum += brentYoY * WEIGHTS.brent;
-    totalWeight += WEIGHTS.brent;
-  }
-  if (crbYoY != null) {
-    weightedSum += crbYoY * WEIGHTS.crb;
-    totalWeight += WEIGHTS.crb;
-  }
-  if (faoFoodYoY != null) {
-    weightedSum += faoFoodYoY * WEIGHTS.faoFood;
-    totalWeight += WEIGHTS.faoFood;
-  }
-
-  const compositeSignal = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  // Treat missing series as neutral (0) rather than renormalizing weights.
+  // Renormalizing was causing energy to over-attribute when food data was
+  // missing — e.g., a +10% Brent reading without FAO would imply a +10%
+  // composite signal instead of +3.5%.
+  let compositeSignal = 0;
+  if (brentYoY != null) compositeSignal += brentYoY * WEIGHTS.brent;
+  if (crbYoY != null) compositeSignal += crbYoY * WEIGHTS.crb;
+  if (faoFoodYoY != null) compositeSignal += faoFoodYoY * WEIGHTS.faoFood;
 
   let signalDirection: 'inflationary' | 'deflationary' | 'neutral';
   if (compositeSignal > 3) {
