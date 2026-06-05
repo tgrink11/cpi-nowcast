@@ -51,9 +51,10 @@ function computeYoY(
     : findLatestAvailableMonth(data, ym);
   if (effectiveYm == null) return null;
 
-  const d = new Date(effectiveYm + '-01');
-  d.setFullYear(d.getFullYear() - 1);
-  const ymAgo = d.toISOString().slice(0, 7);
+  // Use string month math (not Date) so the year-ago month doesn't slip by
+  // one in negative-UTC timezones, where `new Date('2025-03-01')` parses as
+  // the prior day/month in local time.
+  const ymAgo = shiftYearMonth(effectiveYm, -12).slice(0, 7);
 
   const current = getMonthlyAverage(data, effectiveYm);
   const yearAgo = getMonthlyAverage(data, ymAgo);
