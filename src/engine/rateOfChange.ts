@@ -3,7 +3,7 @@ import type {
   CommodityInputs,
   RateOfChangeSignal,
 } from '../types/cpiNowcast';
-import { computeCommodityCpiImpact } from './commoditySignals';
+import { computeCommodityCpiImpact } from './commoditySignals.js';
 
 /**
  * Step 3: Rate-of-Change Signal

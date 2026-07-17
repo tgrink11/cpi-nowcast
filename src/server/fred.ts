@@ -1,5 +1,5 @@
 import type { CpiObservation } from '../types/cpiNowcast';
-import { fetchJsonWithRetry } from './http';
+import { fetchJsonWithRetry } from './http.js';
 
 interface FredObservation {
   date: string;

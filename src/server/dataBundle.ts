@@ -3,8 +3,8 @@ import type {
   CommodityObservation,
   SourceHealth,
 } from '../types/cpiNowcast';
-import { fetchFredSeries } from './fred';
-import { fetchFmpQuote, fetchFmpHistory } from './fmp';
+import { fetchFredSeries } from './fred.js';
+import { fetchFmpQuote, fetchFmpHistory } from './fmp.js';
 
 const BRENT_SYMBOL = 'BZUSD';
 

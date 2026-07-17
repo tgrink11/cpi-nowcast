@@ -6,9 +6,9 @@ import type {
   ClevelandBaseline,
   RawDataBundle,
 } from '../types/cpiNowcast';
-import { runNowcast, buildChartData } from '../engine/nowcastEngine';
-import { assembleRawData } from './dataBundle';
-import { fetchClevelandBaseline } from './clevelandFed';
+import { runNowcast, buildChartData } from '../engine/nowcastEngine.js';
+import { assembleRawData } from './dataBundle.js';
+import { fetchClevelandBaseline } from './clevelandFed.js';
 
 /** Most recent month with a CPI observation (falls back to ~2 months ago). */
 function getLatestCpiMonth(cpi: RawDataBundle['cpi']): string {

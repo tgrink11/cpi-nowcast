@@ -1,5 +1,5 @@
 import type { ClevelandBaseline, ClevelandSeries } from '../types/cpiNowcast';
-import { fetchJsonWithRetry } from './http';
+import { fetchJsonWithRetry } from './http.js';
 
 /**
  * Ingests the Federal Reserve Bank of Cleveland's public inflation-nowcasting

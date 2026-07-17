@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { buildSnapshot } from '../src/server/buildSnapshot';
+import { buildSnapshot } from '../src/server/buildSnapshot.js';
 
 /**
  * Precomputed daily CPI-nowcast snapshot. All heavy work (FRED + FMP + the

@@ -1,5 +1,5 @@
 import type { CommodityObservation } from '../types/cpiNowcast';
-import { fetchJsonWithRetry } from './http';
+import { fetchJsonWithRetry } from './http.js';
 
 /**
  * FMP data via the current `/stable` API surface (the legacy /api/v3 and
