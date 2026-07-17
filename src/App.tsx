@@ -1,5 +1,7 @@
 import { Header } from './components/Header';
 import { NowcastSummary } from './components/NowcastSummary';
+import { ClevelandBaseline } from './components/ClevelandBaseline';
+import { AccuracyCard } from './components/AccuracyCard';
 import { CpiChart } from './components/CpiChart';
 import { BaseEffectsCard } from './components/BaseEffectsCard';
 import { CommodityTable } from './components/CommodityTable';
@@ -10,7 +12,8 @@ import { LoadingState } from './components/LoadingState';
 import { useCpiNowcast } from './hooks/useCpiNowcast';
 
 export default function App() {
-  const { status, error, nowcast, chartData, refresh } = useCpiNowcast();
+  const { status, error, snapshot, nowcast, chartData, refresh } =
+    useCpiNowcast();
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -31,7 +34,7 @@ export default function App() {
           </div>
         )}
 
-        {status === 'success' && nowcast && (
+        {status === 'success' && nowcast && snapshot && (
           <div className="space-y-6">
             {/* Refresh button */}
             <div className="flex justify-end">
@@ -59,8 +62,17 @@ export default function App() {
             {/* Summary */}
             <NowcastSummary nowcast={nowcast} />
 
+            {/* Cleveland Fed anchor + our tilt */}
+            <ClevelandBaseline
+              cleveland={snapshot.cleveland}
+              tilt={snapshot.tilt}
+            />
+
             {/* 36-month chart */}
             <CpiChart data={chartData} />
+
+            {/* Honest, computed accuracy */}
+            <AccuracyCard accuracy={snapshot.accuracy} />
 
             {/* Detail cards */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

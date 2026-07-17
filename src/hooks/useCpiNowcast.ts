@@ -1,50 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { CpiNowcastState } from '../types/cpiNowcast';
-import { fetchAllData, getLatestCpiMonth } from '../api/cpiDataService';
-import { runNowcast, buildChartData } from '../engine/nowcastEngine';
+import type { Snapshot } from '../types/cpiNowcast';
 
-const INITIAL_STATE: CpiNowcastState = {
-  status: 'idle',
-  error: null,
-  nowcast: null,
-  chartData: [],
-  historicalNowcasts: [],
-};
+/**
+ * Loads the precomputed daily snapshot from /api/snapshot. All modeling now
+ * happens server-side (see src/server/buildSnapshot.ts); the client just
+ * renders. This means every visitor shares one computation and the upstream
+ * APIs are hit a few times a day instead of once per page load.
+ */
+
+type Status = 'loading' | 'success' | 'error';
+
+interface HookState {
+  status: Status;
+  error: string | null;
+  snapshot: Snapshot | null;
+}
+
+const INITIAL: HookState = { status: 'loading', error: null, snapshot: null };
 
 export function useCpiNowcast() {
-  const [state, setState] = useState<CpiNowcastState>(INITIAL_STATE);
+  const [state, setState] = useState<HookState>(INITIAL);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState((s) => ({ ...s, status: 'loading', error: null }));
-
     try {
-      const data = await fetchAllData(signal);
-      const latestMonth = getLatestCpiMonth(data.cpi);
-      const nowcast = runNowcast(data, latestMonth);
-      const chartData = buildChartData(data, latestMonth);
-
+      const res = await fetch('/api/snapshot', { signal });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Snapshot request failed (${res.status})`);
+      }
+      const snapshot = (await res.json()) as Snapshot;
       if (signal?.aborted) return;
-
-      setState({
-        status: 'success',
-        error: null,
-        nowcast,
-        chartData,
-        historicalNowcasts: chartData
-          .filter((p) => p.actualYoY != null && p.modelYoY != null)
-          .map((p) => ({
-            date: p.date,
-            nowcast: p.modelYoY!,
-            actual: p.actualYoY!,
-          })),
-      });
+      setState({ status: 'success', error: null, snapshot });
     } catch (err) {
       if (signal?.aborted) return;
-      setState((s) => ({
-        ...s,
+      setState({
         status: 'error',
-        error: err instanceof Error ? err.message : 'Failed to fetch data',
-      }));
+        error: err instanceof Error ? err.message : 'Failed to load snapshot',
+        snapshot: null,
+      });
     }
   }, []);
 
@@ -58,5 +52,12 @@ export function useCpiNowcast() {
     load();
   }, [load]);
 
-  return { ...state, refresh };
+  return {
+    status: state.status,
+    error: state.error,
+    snapshot: state.snapshot,
+    nowcast: state.snapshot?.nowcast ?? null,
+    chartData: state.snapshot?.chartData ?? [],
+    refresh,
+  };
 }

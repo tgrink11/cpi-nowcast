@@ -68,6 +68,11 @@ export function CpiChart({ data }: Props) {
                         Projected: {formatPercent(point.projectedYoY)}
                       </p>
                     )}
+                    {point.clevelandYoY != null && (
+                      <p className="text-violet-600">
+                        Cleveland Fed: {formatPercent(point.clevelandYoY)}
+                      </p>
+                    )}
                   </div>
                 );
               }}
@@ -129,6 +134,18 @@ export function CpiChart({ data }: Props) {
               dot={{ r: 3, fill: '#ea580c' }}
               name="Projected"
               connectNulls={false}
+            />
+
+            {/* Cleveland Fed nowcast - single violet marker on the next print */}
+            <Line
+              type="monotone"
+              dataKey="clevelandYoY"
+              stroke="#7c3aed"
+              strokeWidth={0}
+              dot={{ r: 5, fill: '#7c3aed' }}
+              name="Cleveland Fed Nowcast"
+              connectNulls={false}
+              legendType="circle"
             />
           </ComposedChart>
         </ResponsiveContainer>
