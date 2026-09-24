@@ -37,9 +37,21 @@ function shiftMonths(dateStr: string, months: number): string {
   return `${newY}-${String(newM).padStart(2, '0')}-01`;
 }
 
+export interface BaseEffectsOptions {
+  // Use this value as `currentCpiLevel` instead of looking it up in cpiData.
+  // Required when nowcasting a future month whose CPI hasn't been reported.
+  currentLevelOverride?: number;
+  // Use this value as the prior-month CPI level instead of looking it up.
+  // Pair with `currentLevelOverride` for forward projections, or pass M-1's
+  // and M-2's levels for a clean backtest of month M (avoids leaking M's CPI
+  // through twoYearBaseEffect).
+  priorMonthLevelOverride?: number;
+}
+
 export function analyzeBaseEffects(
   cpiData: CpiObservation[],
-  targetMonth: string
+  targetMonth: string,
+  options?: BaseEffectsOptions
 ): BaseEffectsAnalysis {
   const current = findClosestObservation(cpiData, targetMonth);
   const yearAgo = findClosestObservation(cpiData, shiftMonths(targetMonth, -12));
@@ -50,10 +62,10 @@ export function analyzeBaseEffects(
     shiftMonths(targetMonth, -25)
   );
 
-  const currentVal = current?.value ?? 0;
+  const currentVal = options?.currentLevelOverride ?? current?.value ?? 0;
   const yearAgoVal = yearAgo?.value ?? 0;
   const twoYearAgoVal = twoYearAgo?.value ?? 0;
-  const priorMonthVal = priorMonth?.value ?? 0;
+  const priorMonthVal = options?.priorMonthLevelOverride ?? priorMonth?.value ?? 0;
   const priorTwoYearAgoVal = priorTwoYearAgo?.value ?? 0;
 
   // YoY change
@@ -91,11 +103,16 @@ export function analyzeBaseEffects(
     baseClassification = 'neutral';
   }
 
-  // Inflection signal: sign change in first difference predicts turns ~70% of time
+  // Inflection signal: sign change in first difference predicts turns ~70% of time.
+  // Threshold of 0.15pp filters out month-to-month noise; the 2Y annualized
+  // base effect routinely jitters by ±0.05pp without representing a real
+  // turn, which previously caused this signal to flip sign almost every
+  // month and inject ±0.15pp noise into the overlay.
+  const INFLECTION_THRESHOLD = 0.15;
   let inflectionSignal: 'accelerating' | 'decelerating' | 'none';
-  if (baseEffectFirstDifference > 0.05) {
+  if (baseEffectFirstDifference > INFLECTION_THRESHOLD) {
     inflectionSignal = 'accelerating';
-  } else if (baseEffectFirstDifference < -0.05) {
+  } else if (baseEffectFirstDifference < -INFLECTION_THRESHOLD) {
     inflectionSignal = 'decelerating';
   } else {
     inflectionSignal = 'none';

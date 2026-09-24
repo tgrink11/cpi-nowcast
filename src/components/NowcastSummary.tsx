@@ -5,6 +5,16 @@ interface Props {
   nowcast: NowcastOutput;
 }
 
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+function formatTargetMonth(dateStr: string): string {
+  const [y, m] = dateStr.slice(0, 7).split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${y}`;
+}
+
 export function NowcastSummary({ nowcast }: Props) {
   const directionIcon =
     nowcast.direction === 'accelerating'
@@ -73,7 +83,8 @@ export function NowcastSummary({ nowcast }: Props) {
         {nowcast.confidenceRationale}
       </p>
       <p className="text-xs text-slate-400 mt-2">
-        As of {nowcast.asOfDate} &middot; {nowcast.rateOfChange.baseAndCommodityAgreement}
+        Nowcast for {formatTargetMonth(nowcast.asOfDate)} &middot;{' '}
+        {nowcast.rateOfChange.baseAndCommodityAgreement}
       </p>
     </div>
   );
