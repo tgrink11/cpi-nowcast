@@ -66,7 +66,7 @@ const PHASE_DEFINITIONS: Record<
   },
 };
 
-function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
+export function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
   if (gdpData.length < 2) return 'up'; // default assumption
 
   // Sort by date descending
