@@ -117,7 +117,31 @@ export interface AccuracyStats {
   n: number;
 }
 
-export type SourceHealth = 'ok' | 'stale' | 'unavailable';
+export type YieldCurveState = 'normal' | 'flat' | 'inverted' | 're-steepening';
+
+export interface YieldCurveAnalysis {
+  /** Date of the latest daily 10–3mo observation used. */
+  asOf: string;
+  /** Latest daily 10yr − 3mo spread, pp. Drives the signal. */
+  spread10y3m: number;
+  /** Latest daily 10yr − 2yr spread, pp. Reference only. */
+  spread10y2y: number | null;
+  /** State of the 10–3mo curve (monthly-average basis). */
+  state: YieldCurveState;
+  /** Same classification applied to the 10–2, for display. */
+  state10y2y: YieldCurveState | null;
+  /** Months with a negative 10–3mo monthly average in the last 12. */
+  invertedMonths12: number;
+  /** Months since the 10–3mo was last inverted (within 18m), else null. */
+  monthsSinceInverted: number | null;
+  /** True when the curve is flashing a growth warning. */
+  growthWarning: boolean;
+  note: string;
+  /** Monthly averages for the sparkline (last 36 months). */
+  history: Array<{ month: string; spread10y3m: number; spread10y2y: number | null }>;
+}
+
+export type SourceHealth ='ok' | 'stale' | 'unavailable';
 
 export interface DataStatus {
   fred: SourceHealth;
@@ -137,6 +161,8 @@ export interface Snapshot {
   cleveland: ClevelandBaseline | null;
   tilt: NowcastTilt;
   accuracy: AccuracyStats | null;
+  /** Null when FRED spread data is unavailable. */
+  yieldCurve: YieldCurveAnalysis | null;
   dataStatus: DataStatus;
 }
 
@@ -154,4 +180,8 @@ export interface RawDataBundle {
   ppiaco: CommodityObservation[];
   faoFood: CommodityObservation[];
   gdpGrowth: CommodityObservation[];
+  /** Daily 10yr − 3mo Treasury spread (FRED T10Y3M). */
+  t10y3m: CommodityObservation[];
+  /** Daily 10yr − 2yr Treasury spread (FRED T10Y2Y). */
+  t10y2y: CommodityObservation[];
 }

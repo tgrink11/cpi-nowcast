@@ -60,7 +60,7 @@ export async function assembleRawData(
     fetchFredSeries('DCOILBRENTEU', startDate, endDate, fredKey, signal),
   ]);
 
-  const [ppiaco, gdpGrowth, faoFood, brentQuote, fmpBrentRecent] =
+  const [ppiaco, gdpGrowth, faoFood, t10y3m, t10y2y, brentQuote, fmpBrentRecent] =
     await Promise.all([
       fetchFredSeries('PPIACO', startDate, endDate, fredKey, signal).catch(() => []),
       fetchFredSeries('A191RL1Q225SBEA', startDate, endDate, fredKey, signal).catch(
@@ -69,6 +69,9 @@ export async function assembleRawData(
       fetchFredSeries('CUSR0000SAF11', startDate, endDate, fredKey, signal).catch(
         () => []
       ),
+      // Yield curve spreads (daily). Informational card — degrade to empty.
+      fetchFredSeries('T10Y3M', startDate, endDate, fredKey, signal).catch(() => []),
+      fetchFredSeries('T10Y2Y', startDate, endDate, fredKey, signal).catch(() => []),
       fetchFmpQuote(BRENT_SYMBOL, fmpKey, signal),
       fetchFmpHistory(BRENT_SYMBOL, recentStart, endDate, fmpKey, signal),
     ]);
@@ -78,7 +81,7 @@ export async function assembleRawData(
   const brent = mergeBrent(fredBrent, fmpBrentRecent, brentQuote);
 
   return {
-    data: { cpi, brent, ppiaco, faoFood, gdpGrowth },
+    data: { cpi, brent, ppiaco, faoFood, gdpGrowth, t10y3m, t10y2y },
     fredHealth: 'ok',
     fmpHealth,
   };

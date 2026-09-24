@@ -8,6 +8,7 @@ import type {
 } from '../types/cpiNowcast';
 import { runNowcast, buildChartData } from '../engine/nowcastEngine.js';
 import { assembleRawData } from './dataBundle.js';
+import { analyzeYieldCurve } from '../engine/yieldCurve.js';
 import { fetchClevelandBaseline } from './clevelandFed.js';
 
 /** Most recent month with a CPI observation (falls back to ~2 months ago). */
@@ -111,6 +112,15 @@ export async function buildSnapshot(
   const baseChart = buildChartData(data, latestMonth);
   const accuracy = computeAccuracy(baseChart);
 
+  // Informational only: a 1991–2026 backtest (scripts/backtest-yield-curve.ts)
+  // found the curve overlay barely moved the GDP growth call, so it does NOT
+  // feed classifyPhase. It is shown as its own card.
+  const yieldCurve = analyzeYieldCurve(
+    data.t10y3m,
+    data.t10y2y,
+    new Date().toISOString().slice(0, 10)
+  );
+
   const { tilt, chartData } = buildTilt(
     baseChart,
     nowcast.nowcastCpiYoY,
@@ -124,6 +134,7 @@ export async function buildSnapshot(
     cleveland,
     tilt,
     accuracy,
+    yieldCurve,
     dataStatus: {
       fred: fredHealth,
       fmp: fmpHealth,

@@ -8,7 +8,7 @@ interface Props {
 export function CommodityTable({ commodityInputs }: Props) {
   const rows = [
     { name: 'Brent Crude Oil', yoy: commodityInputs.brentCrudeYoY, weight: '35%' },
-    { name: 'CRB / PPI Commodities', yoy: commodityInputs.crbIndexYoY, weight: '30%' },
+    { name: 'PPI All Commodities', yoy: commodityInputs.crbIndexYoY, weight: '30%' },
     { name: 'FAO Food Price Index', yoy: commodityInputs.faoFoodPriceYoY, weight: '35%' },
   ];
 
@@ -29,7 +29,12 @@ export function CommodityTable({ commodityInputs }: Props) {
         <thead>
           <tr className="border-b border-slate-200">
             <th className="text-left py-2 text-slate-500 font-medium">Commodity</th>
-            <th className="text-right py-2 text-slate-500 font-medium">Weight</th>
+            <th
+              className="text-right py-2 text-slate-500 font-medium"
+              title="Weight in the composite commodity signal. Distinct from CPI basket share (energy ~7.5%, food ~13.5%) — these weights tune how the composite reads, not how much CPI moves."
+            >
+              Signal Weight
+            </th>
             <th className="text-right py-2 text-slate-500 font-medium">YoY Change</th>
           </tr>
         </thead>
