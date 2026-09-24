@@ -85,7 +85,7 @@ const PHASE_DEFINITIONS: Record<
  * and-decelerating," add a separate `growthRegime` field rather than relaxing
  * this rule.
  */
-function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
+export function getGdpDirection(gdpData: CommodityObservation[]): 'up' | 'down' {
   if (gdpData.length < 2) return 'up'; // default assumption
 
   // Sort by date descending

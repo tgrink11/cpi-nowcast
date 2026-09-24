@@ -4,13 +4,13 @@ import type {
   CpiChartPoint,
   CpiObservation,
 } from '../types/cpiNowcast';
-import { analyzeBaseEffects } from './baseEffects';
-import { analyzeCommoditySignals } from './commoditySignals';
+import { analyzeBaseEffects } from './baseEffects.js';
+import { analyzeCommoditySignals } from './commoditySignals.js';
 import {
   computeNowcastOverlays,
   buildRateOfChangeSignal,
-} from './rateOfChange';
-import { classifyPhase } from './phaseClassification';
+} from './rateOfChange.js';
+import { classifyPhase } from './phaseClassification.js';
 
 /**
  * Step 5: Nowcast Engine
